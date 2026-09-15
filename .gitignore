@@ -1,0 +1,15 @@
+node_modules/
+/data/
+/library/
+/comics/
+/资源示例/
+/build/
+/coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/
+.idea/
+/AGENTS.md

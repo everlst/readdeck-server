@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ReadDeck">
+    <meta name="theme-color" content="#111111">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon-192.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon-192.svg">
+    <title>ReadDeck</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&family=ZCOOL+KuaiLe&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&family=ZCOOL+KuaiLe&display=swap">
+    </noscript>
+    <link rel="stylesheet" href="styles.css?v=20260907-readdeck-v1">
+    <link rel="stylesheet" href="system-settings.css?v=20260908-ai-4-levels">
+    <script src="vendor/jszip.min.js" defer></script>
+    <script src="vendor/epub.min.js" defer></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 登录页 -->
+        <div id="login-page" class="page active">
+            <div class="login-container">
+                <h1>📚 ReadDeck</h1>
+                <form id="login-form" onsubmit="return false">
+                    <input type="text" id="login-user" placeholder="用户名" autocomplete="username" required>
+                    <input type="password" id="login-pass" placeholder="密码" autocomplete="current-password" required>
+                    <button type="submit" class="btn-primary login-btn" id="login-btn">登录</button>
+                    <p id="login-error" class="login-error"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- 漫画列表页 -->
+        <div id="comic-list-page" class="page">
+            <header class="main-header list-header category-layout-inline" id="list-header">
+                <div class="list-header-primary">
+                    <h1 id="list-title" class="app-title">ReadDeck</h1>
+                    <div class="category-dock" id="category-dock">
+                        <nav class="category-tabs header-category-tabs" id="category-tabs" aria-label="作品分类">
+                        </nav>
+                        <button class="category-tabs-toggle" id="category-tabs-toggle" type="button" onclick="app.toggleCategoryTabsExpanded()" aria-expanded="false">展开</button>
+                    </div>
+                    <div class="header-actions">
+                        <button class="icon-btn" id="system-settings-btn" onclick="systemSettings.open().catch(error => alert(error.message))" title="系统设置" aria-label="系统设置">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 3h5l.5 3a7 7 0 0 1 1.5.9l2.9-1.1 2.5 4.4-2.4 1.9a7 7 0 0 1 0 1.8l2.4 1.9-2.5 4.4-2.9-1.1a7 7 0 0 1-1.5.9l-.5 3h-5l-.5-3a7 7 0 0 1-1.5-.9l-2.9 1.1-2.5-4.4 2.4-1.9a7 7 0 0 1 0-1.8l-2.4-1.9 2.5-4.4 2.9 1.1A7 7 0 0 1 9 6Z" transform="translate(0 -1)"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        <button class="icon-btn" id="scrape-btn" onclick="app.runScanAndScrape()" title="扫描并刮削" aria-label="扫描并刮削">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5 4 4L7 21l-4-4ZM12 8l4 4M5 3v4M3 5h4M19 13v4M17 15h4M19 2v4M17 4h4"/></svg>
+                        </button>
+                        <button class="icon-btn" id="search-toggle-btn" onclick="app.toggleSearch()" title="搜索">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        </button>
+                        <button class="icon-btn" onclick="app.logout()" title="退出登录">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+            <div id="search-bar" class="search-bar" style="display:none">
+                <div class="search-input-wrapper">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="search-input" placeholder="搜索名称、别名、作者、标签..." autocomplete="off">
+                    <button class="search-clear-btn" id="search-clear-btn" onclick="app.clearSearch()" style="display:none">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div id="tag-filter-bar" class="tag-filter-bar"></div>
+            <div id="task-status" class="task-status" style="display:none"></div>
+            <div id="search-status" class="search-status" style="display:none"></div>
+            <div class="sort-anchor" id="sort-anchor">
+                <div class="library-toolbar">
+                    <button id="sort-indicator" class="sort-indicator" type="button" onclick="app.toggleSortMenu()" aria-haspopup="menu" aria-expanded="false">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M9 18h6"/></svg>
+                        <span id="sort-indicator-text">按最近阅读</span>
+                    </button>
+                    <div class="library-view-switch" role="group" aria-label="书库视图">
+                        <button class="library-view-btn" id="library-list-view-btn" type="button" onclick="app.setLibraryViewMode('list')" aria-pressed="false" aria-label="列表视图">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>
+                            <span>列表</span>
+                        </button>
+                        <button class="library-view-btn" id="library-grid-view-btn" type="button" onclick="app.setLibraryViewMode('grid')" aria-pressed="true" aria-label="卡片视图">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                            <span>卡片</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="sort-menu" id="sort-menu">
+                    <button class="sort-menu-item" data-sort="lastRead" onclick="app.changeSort('lastRead')">
+                        <span class="sort-menu-label">按最近阅读</span>
+                        <span class="sort-arrow" id="sort-arrow-lastRead"></span>
+                    </button>
+                    <button class="sort-menu-item" data-sort="name" onclick="app.changeSort('name')">
+                        <span class="sort-menu-label">按名称</span>
+                        <span class="sort-arrow" id="sort-arrow-name"></span>
+                    </button>
+                    <button class="sort-menu-item" data-sort="updatedAt" onclick="app.changeSort('updatedAt')">
+                        <span class="sort-menu-label">按更新日期</span>
+                        <span class="sort-arrow" id="sort-arrow-updatedAt"></span>
+                    </button>
+                    <button class="sort-menu-item" data-sort="latestAddedAt" onclick="app.changeSort('latestAddedAt')">
+                        <span class="sort-menu-label">按最新添加</span>
+                        <span class="sort-arrow" id="sort-arrow-latestAddedAt"></span>
+                    </button>
+                    <button class="sort-menu-item" data-sort="_score" id="sort-item-score" style="display:none" onclick="app.changeSort('_score')">
+                        <span class="sort-menu-label">按相关度</span>
+                        <span class="sort-arrow" id="sort-arrow-_score"></span>
+                    </button>
+                </div>
+            </div>
+            <div id="comic-grid" class="comic-grid"></div>
+        </div>
+
+        <div id="system-settings-page" class="page">
+            <header class="system-settings-header">
+                <button id="system-settings-back" class="icon-btn" type="button" data-action="leave" aria-label="返回书库"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 4-8 8 8 8M4 12h17"/></svg></button>
+                <h1>系统设置</h1>
+                <span id="system-settings-dirty" aria-live="polite"></span>
+                <button class="btn-primary" id="system-settings-save" type="button" data-action="save">保存更改</button>
+            </header>
+            <div class="system-settings-layout">
+                <nav id="system-settings-nav" aria-label="设置分区"></nav>
+                <main class="system-settings-main">
+                    <div id="system-settings-message" role="status" aria-live="polite" hidden></div>
+                    <div id="system-scan-prompt" class="system-scan-prompt" hidden><span>来源配置已变更，请扫描以更新书库。</span><button type="button" class="btn-primary" data-action="scan">立即扫描</button></div>
+                    <div id="system-settings-content"></div>
+                    <button class="system-text-button settings-reload" type="button" data-action="reload">重新载入已保存的设置</button>
+                </main>
+            </div>
+        </div>
+
+        <!-- 漫画详情页 -->
+        <div id="comic-detail-page" class="page detail-page">
+            <header class="main-header">
+                <button class="back-btn" type="button" onclick="app.showComicList()" aria-label="返回书库">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                </button>
+                <h2 id="comic-title"></h2>
+                <button class="icon-btn" id="edit-meta-btn" type="button" onclick="app.openEditModal()" aria-label="编辑作品信息">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+            </header>
+
+            <div class="detail-page-content series-detail-content">
+            <div class="comic-info detail-hero series-detail-hero">
+                <div class="cover-wrapper">
+                    <img id="comic-cover" class="cover-image detail-cover" src="" alt="封面">
+                </div>
+                <div class="info-content">
+                    <div class="info-item"><strong>作者</strong><span id="comic-author"></span></div>
+                    <div class="info-item" id="comic-status-row"><strong>状态</strong><span id="comic-status"></span></div>
+                    <div class="info-item"><strong>更新</strong><span id="comic-updated"></span></div>
+                    <div class="info-item info-brief"><strong>简介</strong><p id="comic-brief"></p></div>
+                </div>
+            </div>
+
+            <div id="continue-reading-bar" class="continue-reading-bar" style="display:none">
+                <button id="continue-reading-btn" class="continue-reading-btn" onclick="app.continueReading()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <div class="continue-reading-text">
+                        <span class="continue-label">继续阅读</span>
+                        <span id="continue-chapter" class="continue-chapter"></span>
+                    </div>
+                </button>
+            </div>
+
+            <section id="metadata-sections" class="metadata-sections"></section>
+            <section id="chapter-section" class="metadata-section" hidden>
+            <div class="tabs" id="group-tabs"></div>
+            <div class="metadata-section-header"><h3 id="chapter-section-title">单话</h3><button id="toggle-chapters" class="btn-secondary compact" type="button" onclick="app.toggleChapterLayout()" aria-expanded="false">展开</button></div>
+            <div id="chapter-list" class="chapter-list"></div>
+            </section>
+            <section id="entity-sections" class="metadata-sections"></section>
+            </div>
+        </div>
+
+        <div id="entity-detail-page" class="page detail-page">
+            <header class="main-header"><button type="button" class="back-btn entity-back" onclick="app.closeEntityDetail()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>返回作品</button><h2 id="entity-detail-title">人物详情</h2></header>
+            <div id="entity-detail-content" class="entity-detail-content"></div>
+        </div>
+
+        <!-- 单行本详情页 -->
+        <div id="volume-detail-page" class="page detail-page">
+            <header class="main-header">
+                <button class="back-btn" type="button" onclick="app.closeVolumeDetail()" aria-label="返回作品详情">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                </button>
+                <h2 id="volume-detail-title" class="volume-detail-page-title"></h2>
+                <a id="volume-bgm-link" class="btn-secondary compact" href="#" target="_blank" rel="noopener" style="display:none">Bangumi</a>
+            </header>
+
+            <div class="volume-detail-content">
+                <div id="volume-detail-loading" class="volume-detail-loading" style="display:none">
+                    <div class="volume-loading-spinner"></div>
+                    <p>加载中...</p>
+                </div>
+
+                <div class="volume-detail-hero detail-hero">
+                    <img id="volume-detail-cover" class="volume-detail-cover-img detail-cover" src="" alt="封面" onerror="this.style.opacity='.3'">
+                    <div class="volume-detail-meta">
+                        <div id="volume-detail-date-row" class="volume-meta-item" style="display:none">
+                            <span class="volume-meta-label">发行日期</span>
+                            <span id="volume-detail-date"></span>
+                        </div>
+                        <div id="volume-detail-pages-row" class="volume-meta-item">
+                            <span class="volume-meta-label">页数</span>
+                            <span id="volume-detail-pages"></span>
+                        </div>
+                        <div class="volume-meta-item">
+                            <span class="volume-meta-label">格式</span>
+                            <span id="volume-detail-type"></span>
+                        </div>
+                        <button id="volume-read-btn" class="btn-primary volume-read-btn" onclick="app.startReadingCurrentVolume()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            开始阅读
+                        </button>
+                    </div>
+                </div>
+
+                <section id="volume-detail-summary-section" class="volume-detail-summary-section detail-section" style="display:none">
+                    <div class="volume-summary-header">
+                        <h3>简介</h3>
+                        <button class="btn-secondary compact" id="volume-summary-toggle" onclick="app.toggleVolumeSummaryLang()" style="display:none">显示原文</button>
+                    </div>
+                    <p id="volume-detail-summary" class="volume-summary-text"></p>
+                </section>
+
+                <section id="volume-detail-versions-section" class="volume-detail-summary-section detail-section" style="display:none">
+                    <div class="volume-summary-header detail-section-header">
+                        <h3>版本</h3>
+                    </div>
+                    <div id="volume-detail-version-list" class="book-version-list"></div>
+                </section>
+
+                <section id="volume-detail-chapters-section" class="volume-detail-summary-section detail-section" style="display:none">
+                    <div class="volume-summary-header detail-section-header">
+                        <h3>章节目录</h3>
+                    </div>
+                    <div id="volume-detail-chapter-list" class="volume-chapter-list"></div>
+                </section>
+
+                <section id="volume-detail-book-info" class="book-information" style="display:none">
+                    <h3>书本信息</h3>
+                    <div id="volume-detail-book-info-content" class="book-information-content"></div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 阅读器页面 -->
+        <div id="reader-page" class="page">
+            <div id="reader-touch-layer" class="reader-touch-layer">
+                <div class="touch-zone touch-prev" id="touch-prev"></div>
+                <div class="touch-zone touch-center" id="touch-center"></div>
+                <div class="touch-zone touch-next" id="touch-next"></div>
+            </div>
+
+            <div id="reader-ui" class="reader-ui">
+                <header class="reader-header">
+                    <button class="back-btn" type="button" onclick="app.exitReader()" aria-label="退出阅读器">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    <h3 id="reader-title"></h3>
+                    <button class="icon-btn" id="toggle-offset-btn" onclick="app.toggleDoublePageOffset()" title="切换拼页顺序" style="display:none">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/></svg>
+                    </button>
+                    <button class="icon-btn" onclick="app.reloadCurrentReader()" title="重新加载当前章节">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                    </button>
+                    <button class="icon-btn" id="novel-toc-btn" type="button" title="目录" style="display:none" onclick="app.toggleNovelToc()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+                    </button>
+                    <button class="icon-btn" onclick="app.toggleSettings()" title="阅读设置" aria-label="阅读设置">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 3h5l.5 3a7 7 0 0 1 1.5.9l2.9-1.1 2.5 4.4-2.4 1.9a7 7 0 0 1 0 1.8l2.4 1.9-2.5 4.4-2.9-1.1a7 7 0 0 1-1.5.9l-.5 3h-5l-.5-3a7 7 0 0 1-1.5-.9l-2.9 1.1-2.5-4.4 2.4-1.9a7 7 0 0 1 0-1.8l-2.4-1.9 2.5-4.4 2.9 1.1A7 7 0 0 1 9 6Z" transform="translate(0 -1)"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                </header>
+
+                <div id="settings-panel" class="settings-panel">
+                    <div class="setting-row" id="direction-row">
+                        <span>阅读方向</span>
+                        <div class="setting-toggle">
+                            <button class="toggle-btn active" data-dir="rtl">右→左</button>
+                            <button class="toggle-btn" data-dir="ltr">左→右</button>
+                        </div>
+                    </div>
+                    <div class="setting-row" id="double-page-row">
+                        <span>拼页模式</span>
+                        <label class="switch">
+                            <input type="checkbox" id="double-page-mode">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" id="strip-mode-row">
+                        <span>条漫模式</span>
+                        <label class="switch">
+                            <input type="checkbox" id="strip-mode">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" id="novel-mode-row" style="display:none">
+                        <span>小说模式</span>
+                        <div class="setting-toggle">
+                            <button class="toggle-btn" type="button" data-novel-mode="scroll">滚动</button>
+                            <button class="toggle-btn active" type="button" data-novel-mode="paged">翻页</button>
+                        </div>
+                    </div>
+                    <div class="setting-row" id="novel-font-row" style="display:none">
+                        <span>字体</span>
+                        <select id="novel-font-select" class="reader-select">
+                            <option value="kai">楷体</option>
+                            <option value="lxgw">霞鹜文楷</option>
+                            <option value="song">宋体</option>
+                            <option value="hei">黑体</option>
+                            <option value="yuan">圆体</option>
+                            <option value="system">系统默认</option>
+                        </select>
+                    </div>
+                    <div class="setting-row" id="novel-font-size-row" style="display:none">
+                        <span>字号</span>
+                        <div class="setting-toggle">
+                            <button class="toggle-btn" type="button" data-novel-font-size="-1">A-</button>
+                            <span id="novel-font-size-value" class="reader-value">20px</span>
+                            <button class="toggle-btn" type="button" data-novel-font-size="1">A+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="reader-footer">
+                    <span id="page-indicator"></span>
+                    <input type="range" id="page-slider" min="1" value="1">
+                </div>
+            </div>
+
+            <div id="reader-viewport" class="reader-viewport">
+                <div id="slide-track" class="slide-track">
+                    <div class="slide-page" id="slide-prev">
+                        <div class="image-container"></div>
+                    </div>
+                    <div class="slide-page" id="slide-current">
+                        <div id="image-container" class="image-container"></div>
+                    </div>
+                    <div class="slide-page" id="slide-next">
+                        <div class="image-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="novel-toc-backdrop" class="novel-toc-backdrop" style="display:none" aria-hidden="true" onclick="app.dismissNovelToc()"></div>
+            <div id="novel-toc-panel" class="novel-toc-panel" style="display:none">
+                <div class="novel-toc-header">
+                    <span>目录</span>
+                    <button class="icon-btn novel-toc-close-btn" type="button" onclick="app.toggleNovelToc(false)" aria-label="关闭">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+                            <path d="M18 6 6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <ul id="novel-toc-list" class="novel-toc-list"></ul>
+            </div>
+
+            <div id="image-lightbox" class="image-lightbox" style="display:none" onclick="app.closeImageLightbox(event)">
+                <button class="lightbox-rotate-btn" type="button" onclick="event.stopPropagation(); app.rotateLightboxImage()" title="逆时针旋转">⟲</button>
+                <button class="lightbox-close-btn" type="button" onclick="event.stopPropagation(); app.closeImageLightbox()" aria-label="关闭">✕</button>
+                <img id="image-lightbox-img" src="" alt="">
+            </div>
+        </div>
+
+        <!-- 编辑元数据弹窗（含封面管理） -->
+        <div id="edit-modal" class="modal-overlay" style="display:none">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>编辑元数据</h3>
+                    <button class="icon-btn" onclick="app.closeEditModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <label>封面
+                        <div class="edit-cover-section">
+                            <img id="edit-cover-preview" class="edit-cover-preview" src="" alt="封面预览">
+                            <div class="edit-cover-actions">
+                                <label class="btn-secondary edit-cover-btn">
+                                    上传封面
+                                    <input type="file" id="cover-upload" accept="image/*" style="display:none" onchange="app.uploadCover(event)">
+                                </label>
+                                <button id="use-bangumi-cover-btn" class="btn-secondary edit-cover-btn" type="button" onclick="app.useBangumiCover()">使用BGM封面</button>
+                                <button class="btn-danger edit-cover-btn" onclick="app.deleteCover()">删除封面</button>
+                            </div>
+                        </div>
+                        <div class="edit-cover-picker">
+                            <select id="edit-cover-resource" onchange="app.onEditCoverResourceChange()"></select>
+                            <div class="edit-cover-picker-row">
+                                <input id="edit-cover-page-number" type="number" min="1" value="1" oninput="app.onEditCoverResourceChange()">
+                                <button class="btn-secondary edit-cover-btn" onclick="app.applyCoverFromPage()">使用该页设封面</button>
+                            </div>
+                        </div>
+                    </label>
+                    <label>名称<input type="text" id="edit-name"></label>
+                    <label>别名<input type="text" id="edit-alias"></label>
+                    <label>Bangumi Subject ID
+                        <div class="edit-cover-picker-row">
+                            <input type="number" id="edit-bangumi-subject-id" min="1" placeholder="例如 427473">
+                            <button class="btn-secondary edit-cover-btn" type="button" onclick="app.rescrapeFromEditSubject()">按编号重新刮削</button>
+                        </div>
+                    </label>
+                    <label>作者（逗号分隔）<input type="text" id="edit-author"></label>
+                    <label>状态<input type="text" id="edit-status" placeholder="例如 连载中 / 完结"></label>
+                    <label>简介<textarea id="edit-brief" rows="4"></textarea></label>
+                </div>
+                <div class="modal-footer">
+                    <p id="edit-save-status" class="edit-save-status" role="alert" aria-live="polite"></p>
+                    <button class="btn-secondary" type="button" onclick="app.closeEditModal()">取消</button>
+                    <button class="btn-primary" id="edit-save-button" type="button" onclick="app.saveMetadata()">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 上下文菜单（长按章节） -->
+        <div id="context-menu" class="context-menu" style="display:none">
+            <button id="ctx-delete-chapter" class="context-menu-item danger">删除此章节</button>
+        </div>
+
+        <!-- 确认弹窗 -->
+        <div id="confirm-modal" class="modal-overlay" style="display:none">
+            <div class="modal modal-sm">
+                <div class="modal-header"><h3 id="confirm-title">确认</h3></div>
+                <div class="modal-body"><p id="confirm-message"></p></div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="app.closeConfirm()">取消</button>
+                    <button class="btn-danger" id="confirm-ok-btn">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="detail-presentation.css?v=2.1.3">
+    <script src="detail-preferences.js?v=2.1.3"></script>
+    <script src="system-settings.js?v=2.1.3"></script>
+    <script src="app.js?v=2.1.3"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+    </script>
+</body>
+</html>

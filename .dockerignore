@@ -1,0 +1,11 @@
+node_modules/
+.git/
+.DS_Store
+*.log
+comics/
+library/
+data/
+.env
+.env.*
+README.md
+/AGENTS.md
