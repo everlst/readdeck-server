@@ -118,4 +118,4 @@ npm run test:docker
 
 ## 来源与许可证
 
-服务端、网页及部分测试源自 `reader-plus`，保留原作者 hhhhhhsx 的 MIT 声明。本独立仓库基于 ReadDeck 服务端 `2.1.8.2` 建立，使用新的 Git 历史。详细来源和随附组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本项目署名为 **evstk**，采用 MIT 许可证。服务端、网页及部分测试源自 `reader-plus`，其上游版权声明保留在许可证中。本独立仓库基于 ReadDeck 服务端 `2.1.8.2` 建立，使用新的 Git 历史。详细来源和随附组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
