@@ -7,5 +7,12 @@ library/
 data/
 .env
 .env.*
-README.md
+/README.md
 /AGENTS.md
+/.github/
+/docs/
+/build/
+/coverage/
+/资源示例/
+/docker-compose.yml
+/compose.build.yml

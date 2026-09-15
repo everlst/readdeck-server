@@ -6,9 +6,9 @@ const { prepareSettings, fixtureSource } = require('./settings-fixture');
 
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'readdeck-scrape-log-'));
-  process.env.DATA_DIR = root;
+  process.env.DATA_DIR = path.join(root, 'data');
   const libraryRoot = path.join(root, 'library'); await fs.mkdir(libraryRoot);
-  prepareSettings({ dataRoot: root, sources: [fixtureSource(libraryRoot, { autoScrape: true })] });
+  prepareSettings({ dataRoot: process.env.DATA_DIR, sources: [fixtureSource(libraryRoot, { autoScrape: true })] });
   const metadata = require('../lib/metadataStore');
   const log = require('../lib/scrapeLog');
   const archive = require('../lib/archiveSource');
@@ -19,8 +19,9 @@ async function main() {
     const seriesList = [], resourceList = [];
     for (const id of ['success', 'fallback', 'failure', 'skipped', 'protected']) {
       const series = { seriesId: id, title: `显示书名-${id}`, category: 'comic' };
-      const resources = [{ seriesId: id, resourceId: `resource-${id}`, sourceId: 'fixture-source', type: 'directory', contentType: 'chapter',
-        relativePath: `原始文件夹-${id}/第1话`, seriesRelativePath: `原始文件夹-${id}` }];
+      // Exercise scrape outcomes with eligible volumes; chapter exclusion has its own suite.
+      const resources = [{ seriesId: id, resourceId: `resource-${id}`, sourceId: 'fixture-source', type: 'directory', contentType: 'volume',
+        relativePath: `原始文件夹-${id}/第1卷`, seriesRelativePath: `原始文件夹-${id}` }];
       await metadata.writeSeriesBundle(series, resources);
       if (id === 'protected') await metadata.updateSeriesOverrides(id, { bangumiScrapeCompletedAt: new Date().toISOString() });
       seriesList.push(series); resourceList.push(...resources);

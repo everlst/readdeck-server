@@ -1,0 +1,14 @@
+services:
+  readdeck:
+    image: evlst/readdeck:latest
+    restart: unless-stopped
+    ports:
+      - "13090:13000"
+    volumes:
+      - ./library:/app/library
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:13000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

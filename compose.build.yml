@@ -1,0 +1,6 @@
+services:
+  readdeck:
+    image: readdeck-server:local
+    build:
+      context: .
+    pull_policy: build
