@@ -2,6 +2,8 @@
 
 可自行部署的漫画与小说书库，包含完整的 Node.js 服务端、网页阅读与管理界面，以及 Docker 构建配置。可以通过浏览器独立使用，也可连接兼容的 ReadDeck 客户端。
 
+iOS App 在独立 [ReadDeck 仓库](https://github.com/everlst/ReadDeck) 维护；App 与服务端分别修改、测试、提交和发布。
+
 本仓库仅发布服务端与网页源码，不包含 iOS App 源码、书籍、个人数据或 API Key。项目代码采用 [MIT 许可证](LICENSE)，第三方组件遵循各自许可，见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ## 功能
@@ -111,6 +113,15 @@ npm run test:docker
 `npm test` 使用测试夹具，不要求真实 AI Key 或个人书库。另有 `npm run smoke`，需要自行准备对应资源示例并设置 `READER_PLUS_SAMPLE_DIR`；这些资源不随开源仓库分发。
 
 首次独立发布的依赖审计存在待处理告警，具体组件、风险级别和公告见 [依赖检查记录](docs/dependency-status.md)。
+
+## 维护文档与 App 联调
+
+- [部署与备份](docs/deployment.md)
+- [服务器设置与元数据服务](docs/server-settings.md)、[扫描与刮削](docs/metadata-scraping.md)
+- [本地导入元数据接口](docs/local-import-metadata.md)、[详情与显示偏好](docs/detail-display.md)
+- [App 调试服务与夹具](docs/device-debugging.md)、[历史联网验证](docs/web-scrape-validation.md)
+
+App 联调默认将本仓库放在 `ReadDeck` 同级目录；不同位置通过 `READDECK_SERVER_ROOT` 指定。真实资源服务由本仓库的 `scripts/start-device-server.mjs` 启动，运行数据保存在本仓库忽略的 `build/device-debug`。
 
 ## 反馈与贡献
 

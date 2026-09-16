@@ -1,0 +1,50 @@
+# 作品详情、人物资料与显示偏好
+
+本页维护服务端数据契约与跨端历史记录；iOS 界面与测试在 [ReadDeck App](https://github.com/everlst/ReadDeck/blob/main/docs/detail-display.md) 维护。
+
+作品详情的单话默认横向滚动，展开后呈现全部网格。角色、创作人员、关联条目默认按此顺序显示，各栏独立展开。卡片进入人物详情，显示完整简介、可用原文和真实来源链接；关联作品继续遵守本地可读权限。展开状态属于本次浏览，不同步。
+
+账号设置中的“作品详情显示”提供显示开关、上移/下移、恢复默认和保存。管理员及读者都能修改自己的配置；同一服务器账号的网页和 App 同步，不影响其他用户。隐藏空栏目，允许三个栏目全部关闭。
+
+## 数据契约
+
+- `GET/PUT /api/me/preferences`：`revision` 与有序 `detailSections: [{id, visible}]`。三个 ID 固定为 `characters`、`persons`、`relations`，数组决定顺序。
+- 存储位于 `data/users/<userId>/preferences.json`，原子写入并按用户串行保存。版本冲突返回 `409`；显示设置不递增认证版本，也不会使用户退出登录。
+- SSE `preferences_changed` 仅发送给同一用户。客户端登录、重连及回到前台时读取最新配置；有编辑中的草稿时保留草稿。离线读取最后保存值，保存失败保留草稿。旧服务器沿用默认展示并提示更新。
+- 人物 `summary` 保留原文；可选 `translatedSummary` 和 `summaryTranslation` 保存译文、原文指纹、上下文指纹、处理版本及状态。获取详情不再因已有头像/中文名而跳过简介，也不再截断至前 32 位人员或前 16 位角色。
+- 传统刮削先统一姓名，再直接翻译外语简介；中文使用 OpenCC 简体化。按实体去重并限制并发，已成功的翻译按原文与上下文复用；失败保留可用资料。联网 AI 的最终简介直接展示，打开详情不发起 AI 或补全请求。
+
+## 卷册显示名
+
+卷册匹配 AI 返回的非空 `displayTitle` 直接作为卡片显示名，仅去除首尾空白，保存 `displayTitleSource: "ai"`。匹配结果解析、卷册详情中文化及页面接口不再使用条目书名覆盖、添加编号或规范化该显示名；资源与候选 ID 检查仍保留。AI 未返回名称时使用已有回退规则。
+
+卷册详情的 `nameCn`、`nameJa` 继续保存完整条目书名，AI 显示名独立保存并随同卷元数据缓存复用。已保存的旧结果不会自动重新刮削；需要更新旧显示名时，对作品执行强制重新刮削。
+
+## 单话与章节不参与 AI
+
+AI 元数据输入只包含作品和书本/卷册，章节资源不发送给联网匹配、资源翻译、传统资源分组或强制重命名。明确标为章节的本地文件名使用本地解析。只有章节的作品仍可刮削作品本身；各话记录不变，新增单话不会使已经完成的作品/卷册元数据失效。设备导入明确的单话文件时返回跳过状态，保留原有书名。
+
+联网策略版本为 4；输出格式保留 `chapterNumber`、`chapterEnd` 兼容字段，要求为空。旧资料继续展示，在下次实际刮削时使用新流程，不另行启动全库迁移任务。人物资料补齐也在实际刮削及缓存复用时进行。
+
+## 已确认视觉依据
+
+- [App 横滑与网格](https://github.com/everlst/ReadDeck/blob/main/docs/design/detail-display/app.png)
+- [网页分栏](design/detail-display/web.png)
+- [人物详情](https://github.com/everlst/ReadDeck/blob/main/docs/design/detail-display/person.png)
+- [显示设置](https://github.com/everlst/ReadDeck/blob/main/docs/design/detail-display/settings.png)
+
+实现沿用项目配色、原生导航和表单；iOS 的系统分组、返回按钮和切换开关随系统版本及外观变化。数据与图片使用实际元数据，不将效果图中的示例资料写入产品。
+
+## 验证入口
+
+```sh
+npm test
+npm run test:detail-display
+node scripts/detail-ui-fixture.js
+```
+
+隔离界面服务默认端口 `15947`，使用临时目录，禁止连接用户真实书库。测试账号为 `detail-reader / reader-password`。App `DetailDisplayUITests` 使用 `TEST_RUNNER_READDECK_DETAIL_SERVER` 指定测试服务；可在模拟器使用 `http://127.0.0.1:15947`，真机使用 Mac 局域网地址。
+
+验收覆盖横滑/网格、人物译文/原文/外链、返回状态、两端设置读写、SSE 更新、账号隔离、冲突及断线、旧服务器回退、长姓名和缺图。视觉比较关注栏目次序、卡片尺寸、文字层级、背景/强调色、图片缩放与间距；网页检查桌面和 390px 窄屏，App 检查深浅色及最大辅助字号。
+
+2026-09-11 验收：服务端完整测试集及新增显示偏好客户端测试通过；iOS 49 项单元测试、作品详情与同步界面测试通过，最终外链去重变更另有 3 项针对性测试通过。网页使用 Codex Browser 检查 1280×900 和 390×844、实际保存/返回/原文交互及控制台；App 使用 iOS 26.5 模拟器对照确认图，检查深浅色和最大辅助字号。容器验证新资源加载和重启后偏好持久化。iPhone 16 Pro 构建成功，但设备锁定阻止了实机界面测试。
