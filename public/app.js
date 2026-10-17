@@ -3275,6 +3275,7 @@ const app = {
                 chapterUuid: version.resourceId || chapter.chapterUuid,
                 resourceId: version.resourceId,
                 seriesId: version.seriesId,
+                sourceId: version.sourceId,
                 resourceType: version.type || chapter.resourceType,
                 pageCount: version.pageCount || chapter.pageCount,
             }),
@@ -3326,6 +3327,46 @@ const app = {
     },
 
     // ─── Reader ───
+    readerChapterList(chapter, options = {}) {
+        const existing = this.state.allChapters || [];
+        const kind = item => item.contentType || 'chapter';
+        const sameResource = item => chapter.resourceId
+            ? item.resourceId === chapter.resourceId
+            : item.chapterUuid === chapter.chapterUuid;
+        // Cross-book navigation and reloads reuse the queue chosen at session entry.
+        if (Array.isArray(options.chapterList) && options.chapterList.length) {
+            return options.chapterList.filter(item => kind(item) === kind(chapter));
+        }
+        if (chapter.isVolumeSubChapter) {
+            return existing.some(item => item.chapterUuid === chapter.chapterUuid)
+                ? existing.filter(item => item.resourceId === chapter.resourceId)
+                : [chapter];
+        }
+        const candidates = (this.state.currentComic?.groups?.[this.state.currentGroup] || [])
+            .filter(item => kind(item) === kind(chapter))
+            .slice().sort((a, b) => a.order - b.order);
+        if (kind(chapter) !== 'volume') {
+            return candidates.map(item => sameResource(item) ||
+                item.versions?.some(version => version.resourceId === chapter.resourceId) ? chapter : item)
+                .filter(item => item.readable !== false || sameResource(item));
+        }
+        const books = new Map();
+        for (const item of candidates) {
+            const key = item.bookKey || item.resourceId || item.chapterUuid;
+            if (!books.has(key)) books.set(key, []);
+            books.get(key).push(item);
+        }
+        return [...books.values()].flatMap(versions => {
+            if (versions.some(sameResource)) return [chapter];
+            const readable = versions.filter(item => item.readable !== false);
+            const preferred = readable.filter(item => chapter.sourceId
+                ? item.sourceId === chapter.sourceId
+                : chapter.seriesId && item.seriesId === chapter.seriesId);
+            const selected = preferred.find(item => item.seriesId === chapter.seriesId) || preferred[0] || readable[0];
+            return selected ? [selected] : [];
+        });
+    },
+
     async openReader(chapter, options = {}) {
         if (String(chapter?.resourceType || '').toLowerCase() === 'epub') {
             return this.openNovelReader(chapter, options);
@@ -3348,18 +3389,7 @@ const app = {
             this.resetImageZoom();
             this.setReaderStatus('正在加载页面...');
 
-            const existingChapterList = Array.isArray(this.state.allChapters) &&
-                this.state.allChapters.some(item => item.chapterUuid === chapter.chapterUuid)
-                ? this.state.allChapters
-                : null;
-            const chapters = (Array.isArray(options.chapterList) && options.chapterList.length > 0
-                ? options.chapterList
-                : (chapter.isVolumeSubChapter && existingChapterList
-                    ? existingChapterList
-                    : (chapter.isVolumeSubChapter
-                        ? [chapter]
-                        : (this.state.currentComic.groups[this.state.currentGroup] || []))))
-                .slice().sort((a, b) => a.order - b.order);
+            const chapters = this.readerChapterList(chapter, options);
             this.state.allChapters = chapters;
             this.state.currentChapterIndex = chapters.findIndex(
                 c => c.chapterUuid === chapter.chapterUuid
@@ -5834,7 +5864,7 @@ const app = {
         const chapter = this.state.currentChapter;
         if (!chapter) return;
         const startPage = Math.max(0, Number(this.state.currentPage || 0));
-        await this.openReader(chapter, { startPage, forceRefresh: true });
+        await this.openReader(chapter, { startPage, forceRefresh: true, chapterList: this.state.allChapters });
     },
 
     // 计算当前页在拼页模式下是否为拼页的起始位置
@@ -6467,7 +6497,7 @@ const app = {
     async switchChapter(idx, position) {
         const chapter = this.state.allChapters[idx];
         if (!chapter) return;
-        const openOptions = {};
+        const openOptions = { chapterList: this.state.allChapters };
         if (position === 'first') {
             openOptions.startPage = chapter.isVolumeSubChapter && chapter.sourceStartPage
                 ? Math.max(0, Number(chapter.sourceStartPage || 1) - 1)
