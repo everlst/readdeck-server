@@ -2,6 +2,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const suites = [
   "test:scan-discovery",
+  "test:legacy-numbering",
   "test:web-scrape",
   "test:ai",
   "test:ai-metadata",

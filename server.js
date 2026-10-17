@@ -2,6 +2,7 @@ const express = require('express');
 const access = require('./lib/access');
 const users = require('./lib/userStore');
 const progressStore = require('./lib/progressStore');
+const { correctLegacyVolumeDisplayTitle } = require('./lib/legacyNumbering');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
@@ -789,7 +790,8 @@ function presentedVolumeDetail(base, persisted, cachedLocalSummary, finalWebResu
 }
 
 function volumeDisplayTitle(resource, match) {
-  return String(match?.displayTitle || resource?.title || resource?.originalTitle || '').trim();
+  const title = String(match?.displayTitle || resource?.title || resource?.originalTitle || '').trim();
+  return correctLegacyVolumeDisplayTitle(title, resource);
 }
 
 function volumeDisplayTitleForCategory(resource, match, category = '', series = {}) {
@@ -1045,7 +1047,7 @@ function buildBookPresentation(context, progress = {}) {
     const detail = storedVolumeDetail(representativeContext?.bundle, match) ||
       volumeDetailsByKey.get(record.detailKey) || (subjectId ? volumeDetailsByKey.get(String(subjectId)) : null);
     const modelTitle = context.workState?.modelGroups?.[representative.resourceId]?.title || '';
-    const title = (record.matchKind === 'related'
+    const rawTitle = (record.matchKind === 'related'
       ? volumeDisplayTitle(representative, match)
       : volumeDisplayTitleForCategory(
           representative,
@@ -1053,6 +1055,7 @@ function buildBookPresentation(context, progress = {}) {
           context.category,
           representativeContext?.bundle?.series || context.baseBundle.series
         )) || modelTitle || detail?.nameCn || detail?.nameJa || representative.originalTitle || representative.title;
+    const title = record.versions.reduce((value, version) => correctLegacyVolumeDisplayTitle(value, version), rawTitle);
     const sectionTitle = record.matchKind === 'offprint'
       ? (context.category === 'novel' ? '卷册' : '单行本')
       : (record.matchKind === 'related'

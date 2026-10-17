@@ -1,6 +1,6 @@
 {
   "name": "readdeck-server",
-  "version": "2.1.8.3",
+  "version": "2.1.8.4",
   "description": "ReadDeck private reading server and web client",
   "main": "server.js",
   "scripts": {
@@ -35,7 +35,8 @@
     "test:relations": "node scripts/related-library-test.js",
     "test:scan-discovery": "node scripts/scan-discovery-test.js && node scripts/scan-consistency-test.js && node scripts/scan-live-test.js",
     "test:detail-display": "node scripts/user-preferences-test.js && node scripts/entity-summaries-test.js && node scripts/chapter-metadata-exclusion-test.js && node scripts/detail-preferences-client-test.js",
-    "test:reader-navigation": "node scripts/resource-progress-test.js && node scripts/reader-session-test.js && node scripts/reader-navigation-test.js"
+    "test:reader-navigation": "node scripts/resource-progress-test.js && node scripts/reader-session-test.js && node scripts/reader-navigation-test.js",
+    "test:legacy-numbering": "node scripts/legacy-numbering-test.js"
   },
   "license": "MIT",
   "dependencies": {
