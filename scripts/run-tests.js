@@ -21,6 +21,7 @@ const suites = [
   "test:detail-presentation",
   "test:work-aggregation",
   "test:reader-ui",
+  "test:reader-navigation",
   "test:realtime-events",
   "test:readdeck",
   "test:local-metadata",

@@ -91,7 +91,7 @@ const app = {
             }
             opts.body = JSON.stringify(body);
             pendingKey = 'readdeck-progress-' + this.state.userId;
-            pendingId = url + ':' + body.chapterUuid;
+            pendingId = JSON.stringify([url, body.resourceId || '', body.chapterUuid]);
             const pending = JSON.parse(localStorage.getItem(pendingKey) || '{}');
             pending[pendingId] = { url, body }; localStorage.setItem(pendingKey, JSON.stringify(pending));
         }
@@ -368,9 +368,18 @@ const app = {
 
     async flushPendingProgress() {
         if (!this.state.token || !this.state.userId) return;
-        const pending = JSON.parse(localStorage.getItem('readdeck-progress-' + this.state.userId) || '{}');
-        for (const item of Object.values(pending)) {
-            try { await this.authFetch(item.url, { method: 'PUT', body: JSON.stringify(item.body) }); } catch { break; }
+        const key = 'readdeck-progress-' + this.state.userId;
+        const pending = JSON.parse(localStorage.getItem(key) || '{}');
+        for (const [id, item] of Object.entries(pending)) {
+            try {
+                const response = await this.authFetch(item.url, { method: 'PUT', body: JSON.stringify(item.body) });
+                if (response.ok) {
+                    // Also retire entries saved with the older chapter-only queue key.
+                    const latest = JSON.parse(localStorage.getItem(key) || '{}');
+                    if (JSON.stringify(latest[id]) === JSON.stringify(item)) delete latest[id];
+                    localStorage.setItem(key, JSON.stringify(latest));
+                }
+            } catch { break; }
         }
     },
     enterLibrary() {
@@ -385,7 +394,7 @@ const app = {
     },
 
     logout() {
-        if (this._progressTimer) clearTimeout(this._progressTimer);
+        this.flushReaderProgress();
         this._exitNovelMode();
         this.state.progressCache = {}; this.state.comics = []; this.state.currentComic = null;
         this.disconnectRealtimeEvents();
@@ -3189,7 +3198,7 @@ const app = {
             item.className = 'chapter-item';
 
             // 标记有进度的章节
-            if (comicProgress?.chapters?.[chapter.chapterUuid]) {
+            if (this.resourceReadingPosition(comicProgress, chapter)) {
                 item.classList.add('has-progress');
             }
 
@@ -3368,10 +3377,11 @@ const app = {
     },
 
     async openReader(chapter, options = {}) {
+        this.flushReaderProgress();
         if (String(chapter?.resourceType || '').toLowerCase() === 'epub') {
             return this.openNovelReader(chapter, options);
         }
-        const loadToken = Date.now();
+        const loadToken = (this._readerLoadToken || 0) + 1;
         this._readerLoadToken = loadToken;
         this._readerForceRefresh = options.forceRefresh === true;
         try {
@@ -3406,6 +3416,7 @@ const app = {
                 );
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '资源打开失败');
+                if (this._readerLoadToken !== loadToken) return;
                 this.state.currentImages = data.pages.map(url => this.withAssetToken(url));
             } else {
                 const chapterDir = this.buildChapterDir(chapter);
@@ -3416,6 +3427,7 @@ const app = {
                 );
                 const data = await res.json();
 
+                if (this._readerLoadToken !== loadToken) return;
                 this.state.currentImages = data.images.map(img =>
                     this.withAssetToken(
                         `/api/comics/${encodeURIComponent(this.state.currentComic.comic.id)}/${encodeURIComponent(groupName)}/${encodeURIComponent(chapterDir)}/image/${encodeURIComponent(img)}`
@@ -3431,18 +3443,18 @@ const app = {
                 savedPage = options.startPage;
             } else {
                 try {
-                    const pRes = await this.authFetch(`/api/progress/${encodeURIComponent(comicId)}`);
+                    const pRes = await this.authFetch(this.readerProgressUrl(comicId, chapter));
                     const progress = await pRes.json();
-                    if (progress.chapters?.[chapter.chapterUuid]) {
-                        savedPage = progress.chapters[chapter.chapterUuid].page || 0;
-                        if (chapter.isVolumeSubChapter && chapter.sourceStartPage && options.sliceResourcePages !== true) {
-                            savedPage += Math.max(0, Number(chapter.sourceStartPage || 1) - 1);
+                    const position = this.resourceReadingPosition(progress, chapter);
+                    if (position) {
+                        savedPage = Math.max(0, Number(position.page || 0));
+                        if (chapter.isVolumeSubChapter && position.sourceStartPage && options.sliceResourcePages !== true) {
+                            savedPage += Math.max(0, Number(position.sourceStartPage) - 1);
                         }
-                    } else if (progress.lastChapterUuid === chapter.chapterUuid && progress.lastPage != null) {
-                        savedPage = Math.max(0, Number(progress.lastPage || 0));
                     }
                 } catch (e) {}
             }
+            if (this._readerLoadToken !== loadToken) return;
             if (this.state.currentImages.length > 0) {
                 savedPage = Math.min(savedPage, this.state.currentImages.length - 1);
                 if (savedPage < 0) savedPage = 0;
@@ -3482,6 +3494,7 @@ const app = {
             this.clearReaderStatus();
             this.preloadAdjacent();
         } catch (error) {
+            if (this._readerLoadToken !== loadToken) return;
             console.error('Failed to open reader:', error);
             this.setReaderStatus(error.message || '页面加载失败', [
                 { text: '重试', action: () => this.reloadCurrentReader() },
@@ -3525,7 +3538,7 @@ const app = {
     },
 
     async openNovelReader(chapter, options = {}) {
-        const loadToken = Date.now();
+        const loadToken = (this._readerLoadToken || 0) + 1;
         this._readerLoadToken = loadToken;
         this._readerForceRefresh = options.forceRefresh === true;
         try {
@@ -3586,7 +3599,9 @@ const app = {
                 return this.installEpubContentHooks(contents);
             });
 
-            rendition.on('relocated', (location) => this.onEpubRelocated(location));
+            rendition.on('relocated', (location) => {
+                if (this._readerLoadToken === loadToken) this.onEpubRelocated(location);
+            });
 
             // Fallback click on rendition itself (some epub.js builds dispatch here)
             rendition.on('click', (event) => {
@@ -3600,6 +3615,7 @@ const app = {
                     `/api/resources/${encodeURIComponent(chapter.resourceId)}/epub/manifest`
                 );
                 const manifest = await mRes.json();
+                if (this._readerLoadToken !== loadToken) return;
                 if (mRes.ok) {
                     this.state.currentNovel = { manifest, resourceId: chapter.resourceId };
                     const tocFlat = Array.isArray(manifest.tocFlat) ? manifest.tocFlat : [];
@@ -3629,10 +3645,13 @@ const app = {
             let startTarget = null;
             try {
                 const pRes = await this.authFetch(
-                    `/api/progress/${encodeURIComponent(this.state.currentComic.comic.id)}`
+                    this.readerProgressUrl(this.state.currentComic.comic.id, chapter)
                 );
                 const progress = await pRes.json();
-                this.state.progressCache[this.state.currentComic.comic.id] = progress;
+                if (this._readerLoadToken !== loadToken) return;
+                const cached = this.state.progressCache[this.state.currentComic.comic.id] ||= {};
+                cached.chapters = { ...cached.chapters, ...progress.chapters };
+                cached.resources = { ...cached.resources, ...progress.resources };
                 if (!options.forceStart && progress?.lastResourceId === chapter.resourceId &&
                     progress.lastResourceType === 'epub' && progress.lastCfi) {
                     startTarget = progress.lastCfi;
@@ -3672,6 +3691,7 @@ const app = {
                         new Promise(resolve => setTimeout(() => resolve(null), 1200)),
                     ]) || navigation;
                 }
+                if (this._readerLoadToken !== loadToken) return;
                 walk(!this._novelTocFromManifest ? (navigation?.toc || []) : []);
                 if (!this._novelTocFromManifest && flat.length > 0) {
                     this.state.allChapters = flat;
@@ -3682,19 +3702,24 @@ const app = {
             // Generate locations before first display so the footer is page/total, not percent.
             try {
                 await this.withTimeout(book.locations.generate(1600), 8000, 'EPUB 位置生成超时');
+                if (this._readerLoadToken !== loadToken) return;
                 this._epubLocationsReady = true;
             } catch (e) {
+                if (this._readerLoadToken !== loadToken) return;
                 this._epubLocationsReady = false;
             }
 
             if (startTarget !== null && typeof startTarget === 'number') {
                 const spineItem = book.spine.get(startTarget);
                 await this.withFontTimeout(fontPrime);
+                if (this._readerLoadToken !== loadToken) return;
                 await rendition.display(spineItem ? spineItem.href : undefined);
             } else {
                 await this.withFontTimeout(fontPrime);
+                if (this._readerLoadToken !== loadToken) return;
                 await rendition.display(startTarget || undefined);
             }
+            if (this._readerLoadToken !== loadToken) return;
             this._epubReady = true;
             this.state.uiVisible = false;
             document.getElementById('reader-ui').classList.remove('visible');
@@ -3704,6 +3729,7 @@ const app = {
             this.scheduleEpubPageMapBuild();
             this.clearReaderStatus();
         } catch (error) {
+            if (this._readerLoadToken !== loadToken) return;
             console.error('Failed to open novel:', error);
             this.setReaderStatus(error.message || '\u5c0f\u8bf4\u52a0\u8f7d\u5931\u8d25', [
                 { text: '\u91cd\u8bd5', action: () => this.reloadCurrentReader() },
@@ -4937,64 +4963,19 @@ const app = {
 
     saveNovelProgress() {
         if (!this.state.novelMode || !this.state.currentChapter) return;
-        if (this._progressTimer) clearTimeout(this._progressTimer);
-        this._progressTimer = setTimeout(() => this.flushNovelProgress(), 500);
+        const comicId = this.state.currentComic?.comic?.id;
+        const body = this.readerProgressSnapshot(
+            Number.isInteger(this.state.currentChapterIndex) ? this.state.currentChapterIndex : 0,
+            { resourceType: 'epub', cfi: this._epubLocation?.start?.cfi || '',
+                scrollPercent: Number(this.state.novelScrollPercent || 0) }
+        );
+        if (!comicId || !body) return;
+        this.scheduleReaderProgress(comicId, body, 500);
     },
 
     flushNovelProgress() {
-        if (!this.state.novelMode || !this.state.currentChapter || !this.state.currentComic?.comic?.id) return;
-        if (this._progressTimer) {
-            clearTimeout(this._progressTimer);
-            this._progressTimer = null;
-        }
-        const comicId = this.state.currentComic.comic.id;
-        const chapter = this.state.currentChapter;
-        const cfi = this._epubLocation?.start?.cfi || '';
-        const scrollPercent = Number(this.state.novelScrollPercent || 0);
-        const page = Number.isInteger(this.state.currentChapterIndex) ? this.state.currentChapterIndex : 0;
-
-        if (!this.state.progressCache[comicId]) this.state.progressCache[comicId] = {};
-        Object.assign(this.state.progressCache[comicId], {
-            lastChapterUuid: chapter.chapterUuid,
-            lastPage: page,
-            lastChapterTitle: chapter.chapterTitle,
-            lastGroupName: chapter.groupName,
-            lastResourceId: chapter.resourceId || '',
-            lastResourceType: 'epub',
-            lastSourceStartPage: chapter.sourceStartPage || null,
-            lastSourcePageCount: chapter.sourcePageCount || null,
-            lastScrollPercent: scrollPercent,
-            lastCfi: cfi,
-            updatedAt: new Date().toISOString(),
-        });
-        if (!this.state.progressCache[comicId].chapters) this.state.progressCache[comicId].chapters = {};
-        this.state.progressCache[comicId].chapters[chapter.chapterUuid] = {
-            page,
-            resourceId: chapter.resourceId || '',
-            resourceType: 'epub',
-            sourceStartPage: chapter.sourceStartPage || null,
-            sourcePageCount: chapter.sourcePageCount || null,
-            scrollPercent,
-            cfi,
-            readingMode: this.state.novelReadingMode,
-        };
-
-        this.authFetch(`/api/progress/${encodeURIComponent(comicId)}`, {
-            method: 'PUT',
-            body: JSON.stringify({
-                chapterUuid: chapter.chapterUuid,
-                page,
-                chapterTitle: chapter.chapterTitle,
-                groupName: chapter.groupName,
-                resourceId: chapter.resourceId || '',
-                resourceType: 'epub',
-                sourceStartPage: chapter.sourceStartPage || null,
-                sourcePageCount: chapter.sourcePageCount || null,
-                scrollPercent,
-                cfi,
-            })
-        }).catch(() => {});
-        this.state.lastComicsLoadTime = 0;
+        this.saveNovelProgress();
+        return this.flushReaderProgress();
     },
 
     _exitNovelMode() {
@@ -6418,56 +6399,70 @@ const app = {
         }, 400);
     },
 
-    // 节流保存进度
+    readerProgressUrl(comicId, chapter) {
+        const base = `/api/progress/${encodeURIComponent(comicId)}`;
+        return chapter.resourceId ? base + '?resourceId=' + encodeURIComponent(chapter.resourceId) : base;
+    },
+
+    resourceReadingPosition(progress, chapter) {
+        if (!progress) return null;
+        if (chapter.resourceId && progress.resources?.[chapter.resourceId]) return progress.resources[chapter.resourceId];
+        const entry = progress.chapters?.[chapter.chapterUuid];
+        if (entry && (!chapter.resourceId || entry.resourceId === chapter.resourceId)) return entry;
+        if (chapter.resourceId ? progress.lastResourceId === chapter.resourceId : progress.lastChapterUuid === chapter.chapterUuid) {
+            return { page: progress.lastPage, cfi: progress.lastCfi, sourceStartPage: progress.lastSourceStartPage };
+        }
+        return null;
+    },
+
+    readerProgressSnapshot(page, extra = {}) {
+        const chapter = this.state.currentChapter;
+        if (!chapter) return null;
+        return {
+            chapterUuid: chapter.chapterUuid, chapterTitle: chapter.chapterTitle, groupName: chapter.groupName,
+            resourceId: chapter.resourceId || '', resourceType: chapter.resourceType || '',
+            sourceStartPage: chapter.sourceStartPage || null, sourcePageCount: chapter.sourcePageCount || null,
+            page: Math.max(0, Number.isFinite(Number(page)) ? Number(page) : 0), ...extra,
+        };
+    },
+
+    writeReaderProgress(comicId, body) {
+        const cache = this.state.progressCache[comicId] ||= {};
+        const entry = { ...body, updatedAt: new Date().toISOString() };
+        (cache.chapters ||= {})[body.chapterUuid] = entry;
+        if (body.resourceId) (cache.resources ||= {})[body.resourceId] = entry;
+        Object.assign(cache, {
+            lastChapterUuid: body.chapterUuid, lastChapterTitle: body.chapterTitle, lastGroupName: body.groupName,
+            lastPage: body.page, lastResourceId: body.resourceId, lastResourceType: body.resourceType,
+            lastSourceStartPage: body.sourceStartPage, lastSourcePageCount: body.sourcePageCount,
+            lastCfi: body.cfi || '', lastScrollPercent: body.scrollPercent || 0, updatedAt: entry.updatedAt,
+        });
+        this.state.lastComicsLoadTime = 0;
+        return this.authFetch(`/api/progress/${encodeURIComponent(comicId)}`, {
+            method: 'PUT', body: JSON.stringify(body),
+        }).catch(() => {});
+    },
+
     _progressTimer: null,
+    _pendingProgressSave: null,
+    scheduleReaderProgress(comicId, body, delay) {
+        if (this._progressTimer) clearTimeout(this._progressTimer);
+        this._pendingProgressSave = () => this.writeReaderProgress(comicId, body);
+        this._progressTimer = setTimeout(() => this.flushReaderProgress(), delay);
+    },
+
+    flushReaderProgress() {
+        if (this._progressTimer) clearTimeout(this._progressTimer);
+        this._progressTimer = null;
+        const save = this._pendingProgressSave;
+        this._pendingProgressSave = null;
+        return save?.();
+    },
+
     saveProgress(page) {
         const comicId = this.state.currentComic?.comic?.id;
-        const chapter = this.state.currentChapter;
-        if (!comicId || !chapter) return;
-        const savedPage = Math.max(0, Number.isFinite(Number(page)) ? Number(page) : 0);
-        const chapterSnapshot = {
-            chapterUuid: chapter.chapterUuid,
-            chapterTitle: chapter.chapterTitle,
-            groupName: chapter.groupName,
-            resourceId: chapter.resourceId || '',
-            sourceStartPage: chapter.sourceStartPage || null,
-            sourcePageCount: chapter.sourcePageCount || null,
-        };
-        if (this._progressTimer) clearTimeout(this._progressTimer);
-        this._progressTimer = setTimeout(() => {
-            this._progressTimer = null;
-            this.authFetch(`/api/progress/${encodeURIComponent(comicId)}`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    chapterUuid: chapterSnapshot.chapterUuid,
-                    page: savedPage,
-                    chapterTitle: chapterSnapshot.chapterTitle,
-                    groupName: chapterSnapshot.groupName,
-                    resourceId: chapterSnapshot.resourceId,
-                    sourceStartPage: chapterSnapshot.sourceStartPage,
-                    sourcePageCount: chapterSnapshot.sourcePageCount,
-                })
-            }).catch(() => {});
-
-            // 同时更新本地缓存
-            if (!this.state.progressCache[comicId]) this.state.progressCache[comicId] = {};
-            this.state.progressCache[comicId].lastChapterUuid = chapterSnapshot.chapterUuid;
-            this.state.progressCache[comicId].lastPage = savedPage;
-            this.state.progressCache[comicId].lastChapterTitle = chapterSnapshot.chapterTitle;
-            this.state.progressCache[comicId].lastResourceId = chapterSnapshot.resourceId;
-            this.state.progressCache[comicId].lastSourceStartPage = chapterSnapshot.sourceStartPage;
-            this.state.progressCache[comicId].lastSourcePageCount = chapterSnapshot.sourcePageCount;
-            this.state.progressCache[comicId].updatedAt = new Date().toISOString();
-            if (!this.state.progressCache[comicId].chapters) this.state.progressCache[comicId].chapters = {};
-            this.state.progressCache[comicId].chapters[chapterSnapshot.chapterUuid] = {
-                page: savedPage,
-                resourceId: chapterSnapshot.resourceId,
-                sourceStartPage: chapterSnapshot.sourceStartPage,
-                sourcePageCount: chapterSnapshot.sourcePageCount,
-            };
-            // 下一次回到首页时强制刷新，确保多版本代表项与封面按最新阅读同步。
-            this.state.lastComicsLoadTime = 0;
-        }, 800);
+        const body = this.readerProgressSnapshot(page);
+        if (comicId && body) this.scheduleReaderProgress(comicId, body, 800);
     },
 
     toggleDoublePageOffset() {
@@ -6503,7 +6498,10 @@ const app = {
                 ? Math.max(0, Number(chapter.sourceStartPage || 1) - 1)
                 : 0;
         }
-        await this.openReader(chapter, openOptions);
+        const opening = this.openReader(chapter, openOptions);
+        const loadToken = this._readerLoadToken;
+        await opening;
+        if (this._readerLoadToken !== loadToken) return;
         if (position === 'last') {
             const total = this.state.currentImages.length;
             const lastPage = Math.max(0, total - 1);
@@ -6548,47 +6546,11 @@ const app = {
         // 清理条漫模式
         this._exitStripMode();
 
-        // 取消节流定时器，立即保存当前进度
-        if (this._progressTimer) clearTimeout(this._progressTimer);
         const comicId = this.state.currentComic.comic.id;
-        const chapter = this.state.currentChapter;
-        const page = this.state.currentPage;
-
-        // 立即更新本地缓存
-        if (!this.state.progressCache[comicId]) this.state.progressCache[comicId] = {};
-        this.state.progressCache[comicId].lastChapterUuid = chapter.chapterUuid;
-        this.state.progressCache[comicId].lastPage = page;
-        this.state.progressCache[comicId].lastChapterTitle = chapter.chapterTitle;
-        this.state.progressCache[comicId].lastGroupName = chapter.groupName;
-        this.state.progressCache[comicId].lastResourceId = chapter.resourceId || '';
-        this.state.progressCache[comicId].lastSourceStartPage = chapter.sourceStartPage || null;
-        this.state.progressCache[comicId].lastSourcePageCount = chapter.sourcePageCount || null;
-        this.state.progressCache[comicId].updatedAt = new Date().toISOString();
-        if (!this.state.progressCache[comicId].chapters) this.state.progressCache[comicId].chapters = {};
-        this.state.progressCache[comicId].chapters[chapter.chapterUuid] = {
-            page,
-            resourceId: chapter.resourceId || '',
-            sourceStartPage: chapter.sourceStartPage || null,
-            sourcePageCount: chapter.sourcePageCount || null,
-        };
+        this.saveProgress(this.state.currentPage);
+        await this.flushReaderProgress();
         this.applyOptimisticListCoverFromCurrentComic(comicId);
         this.state.lastComicsLoadTime = 0;
-
-        // 先保存到服务器，再切换页面，确保数据一致
-        try {
-            await this.authFetch(`/api/progress/${encodeURIComponent(comicId)}`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    chapterUuid: chapter.chapterUuid,
-                    page: page,
-                    chapterTitle: chapter.chapterTitle,
-                    groupName: chapter.groupName,
-                    resourceId: chapter.resourceId || '',
-                    sourceStartPage: chapter.sourceStartPage || null,
-                    sourcePageCount: chapter.sourcePageCount || null,
-                })
-            });
-        } catch (e) {}
 
         // 刷新详情页 UI
         this.renderContinueReading();

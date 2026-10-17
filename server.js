@@ -162,13 +162,11 @@ async function getProgressFile() {
   const visible = new Set(indexes.seriesIndex.map(s => s.seriesId));
   return Object.fromEntries(Object.entries(progress).filter(([id]) => visible.has(id)).map(([id, value]) => {
     const chapters = Object.fromEntries(Object.entries(value.chapters || {}).filter(([, p]) => !!indexes.resourceIndex[p.resourceId]));
-    if (indexes.resourceIndex[value.lastResourceId]) return [id, { ...value, chapters }];
-    const latest = Object.entries(chapters).sort((a, b) => progressStore.order(b[1], a[1]))[0];
-    if (!latest) return [id, { chapters }];
-    const [chapter, p] = latest;
-    return [id, { chapters, lastChapterUuid: chapter, lastResourceId: p.resourceId, lastResourceType: p.resourceType,
-      lastPage: p.page, lastCfi: p.cfi, lastScrollPercent: p.scrollPercent,
-      readAt: p.readAt, updatedAt: p.readAt, deviceId: p.deviceId, sequence: p.sequence }];
+    const resources = Object.fromEntries(Object.entries(progressStore.resourceEntries(value))
+      .filter(([resourceId]) => !!indexes.resourceIndex[resourceId]));
+    if (indexes.resourceIndex[value.lastResourceId]) return [id, { ...value, chapters, resources }];
+    const latest = Object.values(resources).sort((a, b) => progressStore.order(b, a))[0];
+    return [id, { ...(latest ? progressStore.forResource({ resources, chapters }, latest.resourceId) : {}), chapters, resources }];
   }));
 }
 
@@ -886,7 +884,13 @@ function mergeWorkProgress(progress, seriesIds = []) {
   rows.sort((a, b) => progressStore.order(b.value, a.value));
   const latest = rows[0];
   const chapters = {};
+  const resources = {};
   for (const row of rows) {
+    for (const [resourceId, entry] of Object.entries(progressStore.resourceEntries(row.value))) {
+      if (!resources[resourceId] || progressStore.order(entry, resources[resourceId]) > 0) {
+        resources[resourceId] = { ...entry, seriesId: entry.seriesId || row.seriesId };
+      }
+    }
     for (const [chapterUuid, chapter] of Object.entries(row.value.chapters || {})) {
       const current = chapters[chapterUuid];
       if (!current || progressStore.order(chapter, current) > 0) {
@@ -899,6 +903,7 @@ function mergeWorkProgress(progress, seriesIds = []) {
     seriesId: latest.seriesId,
     seriesIds: rows.map(row => row.seriesId),
     chapters,
+    resources,
   };
 }
 
@@ -907,6 +912,8 @@ function resourceLastReadAt(progress, resource) {
   let value = seriesProgress.lastResourceId === resource?.resourceId
     ? String(seriesProgress.updatedAt || '')
     : '';
+  const resourceTime = String(seriesProgress.resources?.[resource?.resourceId]?.updatedAt || '');
+  if (resourceTime > value) value = resourceTime;
   for (const chapter of Object.values(seriesProgress.chapters || {})) {
     if (chapter?.resourceId !== resource?.resourceId) continue;
     if (String(chapter.updatedAt || '') > value) value = String(chapter.updatedAt || '');
@@ -1668,9 +1675,18 @@ app.get('/api/progress/:comicId', async (req, res) => {
   try {
     const progress = await getProgressFile();
     const context = await loadLogicalWorkContext(req.params.comicId).catch(() => null);
-    res.json(context
+    const merged = context
       ? mergeWorkProgress(progress, context.seriesIds)
-      : (progress[req.params.comicId] || {}));
+      : (progress[req.params.comicId] || {});
+    if (req.query.resourceId !== undefined) {
+      if (typeof req.query.resourceId !== 'string' || !req.query.resourceId) return res.status(400).json({ error: '资源标识无效' });
+      const resource = await getResource(req.query.resourceId);
+      if (!resource || !(context?.seriesIds || [req.params.comicId]).includes(resource.seriesId)) {
+        return res.status(404).json({ error: '资源不存在' });
+      }
+      return res.json(progressStore.forResource(merged, resource.resourceId));
+    }
+    res.json(merged);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
